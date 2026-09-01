@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPA Crawler</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --border: #e3e6ea;
+    --text: #1c2430;
+    --muted: #64707f;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --chip-pending: #e0e7ff;
+    --chip-pending-text: #3730a3;
+    --chip-running: #fef3c7;
+    --chip-running-text: #92400e;
+    --chip-completed: #dcfce7;
+    --chip-completed-text: #166534;
+    --chip-failed: #fee2e2;
+    --chip-failed-text: #991b1b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f141b;
+      --surface: #171e28;
+      --border: #2a3442;
+      --text: #e5eaf1;
+      --muted: #8b98a9;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --chip-pending: #1e2a5e;
+      --chip-pending-text: #b3c1ff;
+      --chip-running: #4a3410;
+      --chip-running-text: #fcd34d;
+      --chip-completed: #123822;
+      --chip-completed-text: #86efac;
+      --chip-failed: #451a1a;
+      --chip-failed-text: #fca5a5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { margin: 0; font-size: 18px; }
+  header .spacer { flex: 1; }
+  .health {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .health .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .health.ok .dot { background: var(--ok); }
+  .health.bad .dot { background: var(--err); }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 24px; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  section h2 { margin: 0 0 4px; font-size: 16px; }
+  section .hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  button {
+    font: inherit;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-hover); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tbody tr.clickable { cursor: pointer; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  .chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .chip.pending { background: var(--chip-pending); color: var(--chip-pending-text); }
+  .chip.running { background: var(--chip-running); color: var(--chip-running-text); }
+  .chip.completed { background: var(--chip-completed); color: var(--chip-completed-text); }
+  .chip.failed { background: var(--chip-failed); color: var(--chip-failed-text); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: center; }
+  .filters input {
+    font: inherit;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    width: 150px;
+  }
+  .pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .empty { padding: 24px; text-align: center; color: var(--muted); }
+  #job-detail { display: none; }
+  #job-detail.open { display: block; }
+  #job-detail h3 { margin: 16px 0 8px; font-size: 14px; }
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--text);
+    color: var(--bg);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity .25s;
+    pointer-events: none;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: .95; }
+  footer { text-align: center; padding: 8px 0 32px; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RPA Crawler</h1>
+  <span class="muted" style="font-size:13px">coleta assíncrona · scrapethissite.com</span>
+  <span class="spacer"></span>
+  <span id="health" class="health"><span class="dot"></span><span id="health-text">verificando…</span></span>
+</header>
+
+<main>
+  <section>
+    <h2>Agendar coleta</h2>
+    <p class="hint">Cada botão publica um job na fila e retorna imediatamente; o worker processa em segundo plano.</p>
+    <div class="actions">
+      <button class="primary" data-crawl="hockey">Coletar Hockey</button>
+      <button class="primary" data-crawl="oscar">Coletar Oscar</button>
+      <button class="primary" data-crawl="all">Coletar Tudo</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jobs</h2>
+    <p class="hint">Atualiza a cada 4s. Clique em um job para ver os dados coletados por ele.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Job</th><th>Fonte</th><th>Status</th>
+            <th class="num">Tentativas</th><th class="num">Registros</th>
+            <th>Criado</th><th class="num">Duração</th><th>Erro</th>
+          </tr>
+        </thead>
+        <tbody id="jobs-body"></tbody>
+      </table>
+    </div>
+    <div id="jobs-empty" class="empty" hidden>Nenhum job ainda — agende uma coleta acima.</div>
+
+    <div id="job-detail">
+      <h3>Resultados do job <span id="job-detail-id" class="mono"></span></h3>
+      <div id="job-detail-body"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Resultados consolidados</h2>
+    <p class="hint">Snapshot da última coleta completa de cada fonte, com filtros e paginação.</p>
+    <div class="tabs">
+      <button id="tab-hockey" class="active">Hockey Teams</button>
+      <button id="tab-oscar">Oscar Films</button>
+    </div>
+    <div class="filters">
+      <input id="filter-year" type="number" placeholder="Ano (ex: 1990)">
+      <input id="filter-text" type="text" placeholder="Time contém…">
+      <button id="filter-apply">Filtrar</button>
+      <button id="filter-clear">Limpar</button>
+      <span id="snapshot-info" class="muted" style="margin-left:auto;font-size:13px"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead id="results-head"></thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+    <div id="results-empty" class="empty" hidden></div>
+    <div class="pager">
+      <button id="page-prev">‹ Anterior</button>
+      <span id="page-info"></span>
+      <button id="page-next">Próxima ›</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a href="/docs" target="_blank">API docs (Swagger)</a> ·
+  <a href="/redoc" target="_blank">ReDoc</a> ·
+  <a href="http://localhost:15672" target="_blank">RabbitMQ management</a>
+</footer>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    tab: "hockey",
+    limit: 25,
+    offset: 0,
+    total: 0,
+    year: "",
+    text: "",
+    selectedJob: null,
+  };
+
+  function toast(message, isError = false) {
+    const el = $("toast");
+    el.textContent = message;
+    el.style.background = isError ? "var(--err)" : "var(--text)";
+    el.style.color = "#fff";
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("show"), 3500);
+  }
+
+  async function api(path, options) {
+    const response = await fetch(path, options);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.detail || `HTTP ${response.status}`);
+    }
+    return body;
+  }
+
+  function cell(text, className) {
+    const td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = text ?? "—";
+    return td;
+  }
+
+  function chip(status) {
+    const td = document.createElement("td");
+    const span = document.createElement("span");
+    span.className = `chip ${status}`;
+    const labels = { pending: "pendente", running: "executando", completed: "concluído", failed: "falhou" };
+    span.textContent = labels[status] || status;
+    td.appendChild(span);
+    return td;
+  }
+
+  function formatDate(iso) {
+    return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
+  }
+
+  function formatDuration(job) {
+    if (!job.started_at) return "—";
+    const end = job.finished_at ? new Date(job.finished_at) : new Date();
+    const seconds = (end - new Date(job.started_at)) / 1000;
+    return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds / 60)}min`;
+  }
+
+  // --- Coletas -------------------------------------------------------------
+
+  document.querySelectorAll("[data-crawl]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const job = await api(`/crawl/${button.dataset.crawl}`, { method: "POST" });
+        toast(`Job agendado: ${job.job_id.slice(0, 8)} (${job.source})`);
+        refreshJobs();
+      } catch (error) {
+        toast(`Falha ao agendar: ${error.message}`, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  // --- Jobs ----------------------------------------------------------------
+
+  async function refreshJobs() {
+    let page;
+    try {
+      page = await api("/jobs?limit=50");
+    } catch {
+      return;
+    }
+    const body = $("jobs-body");
+    body.replaceChildren();
+    $("jobs-empty").hidden = page.items.length > 0;
+
+    for (const job of page.items) {
+      const tr = document.createElement("tr");
+      tr.className = "clickable";
+      tr.appendChild(cell(job.id.slice(0, 8), "mono"));
+      tr.appendChild(cell(job.source));
+      tr.appendChild(chip(job.status));
+      tr.appendChild(cell(String(job.attempts), "num"));
+      tr.appendChild(cell(job.records_collected == null ? "—" : String(job.records_collected), "num"));
+      tr.appendChild(cell(formatDate(job.created_at)));
+      tr.appendChild(cell(formatDuration(job), "num"));
+      const errorTd = cell(job.error_message || "—", "muted");
+      errorTd.style.maxWidth = "260px";
+      errorTd.style.overflow = "hidden";
+      errorTd.style.textOverflow = "ellipsis";
+      errorTd.title = job.error_message || "";
+      tr.appendChild(errorTd);
+      tr.addEventListener("click", () => showJobDetail(job.id));
+      body.appendChild(tr);
+    }
+  }
+
+  async function showJobDetail(jobId) {
+    state.selectedJob = jobId;
+    let results;
+    try {
+      results = await api(`/jobs/${jobId}/results?limit=10`);
+    } catch (error) {
+      toast(error.message, true);
+      return;
+    }
+    $("job-detail").classList.add("open");
+    $("job-detail-id").textContent = jobId;
+    const container = $("job-detail-body");
+    container.replaceChildren();
+
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    summary.style.fontSize = "13px";
+    const records = results.records_collected == null ? "—" : results.records_collected;
+    summary.textContent = `status: ${results.status} · registros: ${records}`;
+    container.appendChild(summary);
+
+    if (results.hockey) {
+      container.appendChild(miniTable(
+        `Hockey (${results.hockey.total} registros, exibindo ${results.hockey.items.length})`,
+        ["Time", "Ano", "V", "D", "% Vit."],
+        results.hockey.items.map((r) => [r.team_name, r.year, r.wins, r.losses, r.win_pct]),
+      ));
+    }
+    if (results.oscar) {
+      container.appendChild(miniTable(
+        `Oscar (${results.oscar.total} registros, exibindo ${results.oscar.items.length})`,
+        ["Ano", "Título", "Indicações", "Prêmios", "Melhor Filme"],
+        results.oscar.items.map((r) => [r.year, r.title, r.nominations, r.awards, r.best_picture ? "★" : ""]),
+      ));
+    }
+    if (!results.hockey && !results.oscar) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Sem resultados para este job.";
+      container.appendChild(empty);
+    }
+  }
+
+  function miniTable(caption, headers, rows) {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    const title = document.createElement("h3");
+    title.textContent = caption;
+    wrap.appendChild(title);
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headers.forEach((h) => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    const tbody = document.createElement("tbody");
+    rows.forEach((values) => {
+      const tr = document.createElement("tr");
+      values.forEach((value) => tr.appendChild(cell(String(value))));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  // --- Resultados consolidados --------------------------------------------
+
+  const COLUMNS = {
+    hockey: {
+      placeholder: "Time contém…",
+      head: ["Time", "Ano", "Vitórias", "Derrotas", "Derrotas OT", "% Vitórias", "Gols Pró", "Gols Contra", "Saldo"],
+      row: (r) => [r.team_name, r.year, r.wins, r.losses, r.ot_losses ?? "—", r.win_pct, r.goals_for, r.goals_against, r.goal_diff],
+      numeric: [1, 2, 3, 4, 5, 6, 7, 8],
+      query: (s) => ({ year: s.year, team: s.text }),
+      endpoint: "/results/hockey",
+      emptyMessage: "Nenhuma coleta de Hockey concluída ainda.",
+    },
+    oscar: {
+      placeholder: "Título contém…",
+      head: ["Ano", "Título", "Indicações", "Prêmios", "Melhor Filme"],
+      row: (r) => [r.year, r.title, r.nominations, r.awards, r.best_picture ? "★" : ""],
+      numeric: [0, 2, 3],
+      query: (s) => ({ year: s.year, title: s.text }),
+      endpoint: "/results/oscar",
+      emptyMessage: "Nenhuma coleta de Oscar concluída ainda.",
+    },
+  };
+
+  async function refreshResults() {
+    const config = COLUMNS[state.tab];
+    const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
+    const filters = config.query(state);
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== "" && value != null) params.set(key, value);
+    }
+
+    let snapshot;
+    try {
+      snapshot = await api(`${config.endpoint}?${params}`);
+    } catch (error) {
+      toast(error.message, true);
+      return;
+    }
+    state.total = snapshot.total;
+
+    const head = $("results-head");
+    head.replaceChildren();
+    const headRow = document.createElement("tr");
+    config.head.forEach((label, index) => {
+      const th = document.createElement("th");
+      if (config.numeric.includes(index)) th.className = "num";
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    head.appendChild(headRow);
+
+    const body = $("results-body");
+    body.replaceChildren();
+    snapshot.items.forEach((item) => {
+      const tr = document.createElement("tr");
+      config.row(item).forEach((value, index) => {
+        tr.appendChild(cell(String(value), config.numeric.includes(index) ? "num" : ""));
+      });
+      body.appendChild(tr);
+    });
+
+    const emptyEl = $("results-empty");
+    emptyEl.hidden = snapshot.items.length > 0;
+    emptyEl.textContent = snapshot.job_id
+      ? "Nenhum registro com esses filtros."
+      : config.emptyMessage;
+
+    $("snapshot-info").textContent = snapshot.job_id
+      ? `coletado em ${formatDate(snapshot.collected_at)} · job ${snapshot.job_id.slice(0, 8)}`
+      : "";
+
+    const first = state.total === 0 ? 0 : state.offset + 1;
+    const last = Math.min(state.offset + state.limit, state.total);
+    $("page-info").textContent = `${first}–${last} de ${state.total}`;
+    $("page-prev").disabled = state.offset === 0;
+    $("page-next").disabled = state.offset + state.limit >= state.total;
+  }
+
+  function switchTab(tab) {
+    state.tab = tab;
+    state.offset = 0;
+    state.year = "";
+    state.text = "";
+    $("filter-year").value = "";
+    $("filter-text").value = "";
+    $("filter-text").placeholder = COLUMNS[tab].placeholder;
+    $("tab-hockey").classList.toggle("active", tab === "hockey");
+    $("tab-oscar").classList.toggle("active", tab === "oscar");
+    refreshResults();
+  }
+
+  $("tab-hockey").addEventListener("click", () => switchTab("hockey"));
+  $("tab-oscar").addEventListener("click", () => switchTab("oscar"));
+  $("filter-apply").addEventListener("click", () => {
+    state.year = $("filter-year").value.trim();
+    state.text = $("filter-text").value.trim();
+    state.offset = 0;
+    refreshResults();
+  });
+  $("filter-clear").addEventListener("click", () => switchTab(state.tab));
+  $("page-prev").addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.limit);
+    refreshResults();
+  });
+  $("page-next").addEventListener("click", () => {
+    state.offset += state.limit;
+    refreshResults();
+  });
+
+  // --- Health --------------------------------------------------------------
+
+  async function refreshHealth() {
+    const el = $("health");
+    try {
+      const response = await fetch("/health");
+      const body = await response.json();
+      const ok = body.status === "ok";
+      el.className = `health ${ok ? "ok" : "bad"}`;
+      $("health-text").textContent = ok
+        ? "operacional"
+        : `degradado (banco: ${body.database ? "ok" : "falha"}, fila: ${body.broker ? "ok" : "falha"})`;
+    } catch {
+      el.className = "health bad";
+      $("health-text").textContent = "API indisponível";
+    }
+  }
+
+  // --- Bootstrap -----------------------------------------------------------
+
+  refreshHealth();
+  refreshJobs();
+  refreshResults();
+  setInterval(refreshHealth, 10000);
+  setInterval(refreshJobs, 4000);
+  setInterval(() => {
+    if (state.selectedJob) showJobDetail(state.selectedJob);
+  }, 8000);
+})();
+</script>
+</body>
+</html>

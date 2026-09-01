@@ -1,18 +1,15 @@
 import uuid
-from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import Settings
 from app.core.enums import JobSource
 from app.core.exceptions import PublishError
 from app.db.repositories.jobs import JobRepository
 from app.db.repositories.results import ResultRepository
-from app.main import create_app
-from app.messaging.messages import CrawlJobMessage
 from app.schemas.crawl import HockeyTeamData, OscarFilmData
+from tests.unit.helpers import FakePublisher, make_client
 
 HOCKEY_ROW = HockeyTeamData(
     team_name="Boston Bruins",
@@ -27,42 +24,6 @@ HOCKEY_ROW = HockeyTeamData(
 )
 
 OSCAR_ROW = OscarFilmData(year=2015, title="Spotlight", nominations=6, awards=2, best_picture=True)
-
-
-class FakePublisher:
-    def __init__(self, error: Exception | None = None) -> None:
-        self.error = error
-        self.published: list[CrawlJobMessage] = []
-
-    async def publish(self, message: CrawlJobMessage) -> None:
-        if self.error is not None:
-            raise self.error
-        self.published.append(message)
-
-    async def ping(self) -> bool:
-        return True
-
-
-def make_client(session_factory: sessionmaker[Session], publisher: FakePublisher) -> TestClient:
-    app = create_app(
-        Settings(),
-        session_factory=session_factory,
-        publisher=publisher,  # type: ignore[arg-type]
-    )
-    return TestClient(app)
-
-
-@pytest.fixture
-def publisher() -> FakePublisher:
-    return FakePublisher()
-
-
-@pytest.fixture
-def client(
-    session_factory: sessionmaker[Session], publisher: FakePublisher
-) -> Iterator[TestClient]:
-    with make_client(session_factory, publisher) as test_client:
-        yield test_client
 
 
 def complete_job_with_results(

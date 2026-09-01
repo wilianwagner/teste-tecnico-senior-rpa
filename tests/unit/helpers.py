@@ -1,5 +1,34 @@
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.core.config import Settings
 from app.core.enums import JobSource
 from app.crawlers.base import CrawlResult
+from app.main import create_app
+from app.messaging.messages import CrawlJobMessage
+
+
+class FakePublisher:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.published: list[CrawlJobMessage] = []
+
+    async def publish(self, message: CrawlJobMessage) -> None:
+        if self.error is not None:
+            raise self.error
+        self.published.append(message)
+
+    async def ping(self) -> bool:
+        return True
+
+
+def make_client(session_factory: sessionmaker[Session], publisher: FakePublisher) -> TestClient:
+    app = create_app(
+        Settings(),
+        session_factory=session_factory,
+        publisher=publisher,  # type: ignore[arg-type]
+    )
+    return TestClient(app)
 
 
 class StubCrawler:

@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -122,3 +123,35 @@ def test_message_roundtrip_serialization() -> None:
     assert decoded == message
     payload: dict[str, Any] = json.loads(message.to_bytes())
     assert payload == {"job_id": str(message.job_id), "source": "oscar"}
+
+
+class TestShutdown:
+    def test_request_stop_schedules_stop_consuming_threadsafe(self) -> None:
+        consumer = build_consumer(FakeProcessor(outcome=ProcessOutcome.COMPLETED))
+        scheduled: list[Any] = []
+        channel = SimpleNamespace(stop_consuming=lambda: None)
+        consumer._channel = channel
+        consumer._connection = SimpleNamespace(  # type: ignore[assignment]
+            is_open=True, add_callback_threadsafe=scheduled.append
+        )
+
+        consumer.request_stop()
+
+        assert consumer._stopping is True
+        assert scheduled == [channel.stop_consuming]
+
+    def test_request_stop_without_connection_only_sets_flag(self) -> None:
+        consumer = build_consumer(FakeProcessor(outcome=ProcessOutcome.COMPLETED))
+
+        consumer.request_stop()
+
+        assert consumer._stopping is True
+
+    def test_interruptible_sleep_returns_immediately_when_stopping(self) -> None:
+        consumer = build_consumer(FakeProcessor(outcome=ProcessOutcome.COMPLETED))
+        consumer._stopping = True
+        started = time.monotonic()
+
+        consumer._interruptible_sleep(5.0)
+
+        assert time.monotonic() - started < 0.5

@@ -14,6 +14,14 @@ USER_AGENT = "rpa-crawler/0.1"
 
 
 class HockeyCrawler:
+    """Collects NHL team stats from the paginated HTML listing.
+
+    Static content, so plain HTTP is used instead of a browser: the first page
+    reveals the total page count and the remaining pages are fetched
+    sequentially, each with retry and exponential backoff for transient
+    network failures.
+    """
+
     source = JobSource.HOCKEY
 
     def __init__(self, settings: Settings) -> None:

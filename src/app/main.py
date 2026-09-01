@@ -20,6 +20,13 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     publisher: CrawlJobPublisher | None = None,
 ) -> FastAPI:
+    """Build the application.
+
+    `session_factory` and `publisher` default to real instances created during
+    lifespan; tests inject substitutes (in-memory database, fake publisher)
+    through these parameters, in which case their lifecycle stays with the
+    caller.
+    """
     app_settings = settings if settings is not None else get_settings()
     configure_logging(app_settings.log_level)
 

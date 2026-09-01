@@ -5,6 +5,13 @@ from app.schemas.crawl import OscarFilmData
 
 
 def parse_films(html: str, year: int) -> list[OscarFilmData]:
+    """Extract film rows from the AJAX-rendered table.
+
+    The rendered rows carry no year column, so the caller provides the year of
+    the link it clicked. Titles are stripped (the source data has trailing
+    whitespace) and best picture is flagged by the presence of the icon
+    element. Malformed rows raise CrawlerError.
+    """
     soup = BeautifulSoup(html, "lxml")
     return [_parse_row(row, year) for row in soup.select("tr.film")]
 

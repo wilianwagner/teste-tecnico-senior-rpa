@@ -42,6 +42,7 @@ class JobRepository:
         return list(items), total
 
     def mark_running(self, job: Job) -> None:
+        """Start (or restart) an execution; the attempt counter bounds retries."""
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now(UTC)
         job.attempts += 1
@@ -58,5 +59,6 @@ class JobRepository:
         job.finished_at = datetime.now(UTC)
 
     def mark_pending_retry(self, job: Job, error: str) -> None:
+        """Return the job to pending (message will be redelivered), keeping the error."""
         job.status = JobStatus.PENDING
         job.error_message = error

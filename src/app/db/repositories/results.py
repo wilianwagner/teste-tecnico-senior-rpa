@@ -14,11 +14,13 @@ class ResultRepository:
         self.session = session
 
     def replace_hockey(self, job_id: uuid.UUID, rows: Sequence[HockeyTeamData]) -> int:
+        """Replace the job's hockey rows (delete+insert), keeping reruns idempotent."""
         self.session.execute(delete(HockeyTeamStat).where(HockeyTeamStat.job_id == job_id))
         self.session.add_all(HockeyTeamStat(job_id=job_id, **row.model_dump()) for row in rows)
         return len(rows)
 
     def replace_oscar(self, job_id: uuid.UUID, rows: Sequence[OscarFilmData]) -> int:
+        """Replace the job's oscar rows (delete+insert), keeping reruns idempotent."""
         self.session.execute(delete(OscarFilm).where(OscarFilm.job_id == job_id))
         self.session.add_all(OscarFilm(job_id=job_id, **row.model_dump()) for row in rows)
         return len(rows)
@@ -43,6 +45,11 @@ class ResultRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[Job | None, list[HockeyTeamStat], int]:
+        """Snapshot: hockey rows of the most recent completed collection.
+
+        Considers jobs with source `hockey` or `all`; running/failed jobs never
+        become the snapshot. Returns (None, [], 0) before the first completion.
+        """
         job = self._latest_completed_job((JobSource.HOCKEY, JobSource.ALL))
         if job is None:
             return None, [], 0
@@ -64,6 +71,11 @@ class ResultRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[Job | None, list[OscarFilm], int]:
+        """Snapshot: oscar rows of the most recent completed collection.
+
+        Considers jobs with source `oscar` or `all`; running/failed jobs never
+        become the snapshot. Returns (None, [], 0) before the first completion.
+        """
         job = self._latest_completed_job((JobSource.OSCAR, JobSource.ALL))
         if job is None:
             return None, [], 0

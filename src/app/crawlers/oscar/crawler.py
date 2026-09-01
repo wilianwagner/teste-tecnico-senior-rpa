@@ -19,6 +19,14 @@ logger = get_logger(__name__)
 
 
 class OscarCrawler:
+    """Collects Oscar film data from the JavaScript-rendered page.
+
+    The table only exists after clicking a year link, so a headless Chromium
+    session (remote Selenium node when SELENIUM_REMOTE_URL is set, local
+    chromedriver otherwise) clicks through every year and parses the rendered
+    DOM. The browser session is always closed, including on failure.
+    """
+
     source = JobSource.OSCAR
 
     def __init__(self, settings: Settings) -> None:
@@ -74,6 +82,13 @@ class OscarCrawler:
 
     @staticmethod
     def _table_ready(driver: WebDriver, previous_first_row: WebElement | None) -> bool:
+        """Explicit wait condition for a year's table to be fully rendered.
+
+        Three signals are required because the page replaces the table body
+        after an artificial delay: the previous year's rows must be stale (a
+        row still attached means the old table is on screen), the loading
+        spinner must be hidden, and at least one film row must exist.
+        """
         if previous_first_row is not None:
             try:
                 previous_first_row.is_enabled()

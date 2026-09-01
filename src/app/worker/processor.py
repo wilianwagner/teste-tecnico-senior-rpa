@@ -16,6 +16,8 @@ logger = get_logger(__name__)
 
 
 class ProcessOutcome(StrEnum):
+    """What the consumer should do with the message after processing."""
+
     COMPLETED = "completed"
     RETRY = "retry"
     FAILED = "failed"
@@ -23,6 +25,14 @@ class ProcessOutcome(StrEnum):
 
 
 class JobProcessor:
+    """Drives the job lifecycle: pending -> running -> completed/failed.
+
+    Retries are bounded by an attempt counter persisted on the job row, so the
+    limit survives worker restarts and message redeliveries. Each crawler's
+    output is committed as soon as it succeeds; for `all` jobs this keeps the
+    data of a successful source even when the other one fails.
+    """
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -34,6 +44,12 @@ class JobProcessor:
         self.max_attempts = max_attempts
 
     def process(self, message: CrawlJobMessage) -> ProcessOutcome:
+        """Execute one crawl job and report how the message should be settled.
+
+        Idempotent with regard to redeliveries: unknown or already completed
+        jobs are skipped (acked), and reruns replace the job's previous rows
+        instead of duplicating them.
+        """
         with self.session_factory() as session:
             jobs = JobRepository(session)
             job = jobs.get(message.job_id)

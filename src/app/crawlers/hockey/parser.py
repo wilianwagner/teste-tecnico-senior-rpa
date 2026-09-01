@@ -9,11 +9,18 @@ _PAGE_NUM_RE = re.compile(r"page_num=(\d+)")
 
 
 def parse_teams(html: str) -> list[HockeyTeamData]:
+    """Extract every team row from a listing page.
+
+    Empty OT-losses cells become None (pre-2000 seasons have no such stat).
+    A row missing cells or holding non-numeric values raises CrawlerError:
+    failing loudly beats persisting an incomplete dataset.
+    """
     soup = BeautifulSoup(html, "lxml")
     return [_parse_row(row) for row in soup.select("tr.team")]
 
 
 def parse_total_pages(html: str) -> int:
+    """Read the highest page number from the pagination block; 1 when absent."""
     soup = BeautifulSoup(html, "lxml")
     pagination = soup.select_one("ul.pagination")
     if pagination is None:

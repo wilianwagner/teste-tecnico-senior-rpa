@@ -18,6 +18,15 @@ ERROR_BACKOFF_SECONDS = 1.0
 
 
 class CrawlConsumer:
+    """Blocking RabbitMQ consumer for crawl jobs.
+
+    Runs with prefetch 1 and manual acknowledgement: messages are settled only
+    after the processor reports an outcome (COMPLETED/SKIPPED -> ack,
+    RETRY -> requeue, FAILED or invalid payload -> dead-letter). Connection
+    loss triggers reconnection with a delay; SIGTERM/SIGINT stop consumption
+    after the in-flight message finishes.
+    """
+
     def __init__(self, settings: Settings, processor: JobProcessor) -> None:
         self.settings = settings
         self.processor = processor
@@ -26,6 +35,7 @@ class CrawlConsumer:
         self._channel: Any = None
 
     def request_stop(self) -> None:
+        """Ask the consumer to stop; safe to call from signal handlers or other threads."""
         self._stopping = True
         connection, channel = self._connection, self._channel
         if connection is not None and connection.is_open and channel is not None:

@@ -6,6 +6,8 @@ from app.core.enums import JobSource
 
 
 class CrawlJobMessage(BaseModel):
+    """Queue payload: which job to run and which source it targets."""
+
     job_id: uuid.UUID
     source: JobSource
 

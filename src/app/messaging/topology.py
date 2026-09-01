@@ -1,3 +1,11 @@
+"""AMQP topology shared by publisher (API) and consumer (worker).
+
+A direct exchange routes crawl jobs to a durable queue whose dead-letter
+exchange forwards rejected messages (attempts exhausted or invalid payload) to
+the DLQ. Both sides declare the topology on connect; declarations are
+idempotent, so startup order does not matter.
+"""
+
 from typing import Any
 
 from aio_pika import ExchangeType

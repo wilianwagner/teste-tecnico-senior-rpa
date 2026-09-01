@@ -18,6 +18,12 @@ class JobService:
         self.publisher = publisher
 
     async def enqueue(self, source: JobSource) -> Job:
+        """Create a pending job and publish it to the queue.
+
+        The job row is committed before publishing so a job id always exists;
+        if publishing then fails, the job is marked failed with the reason and
+        the error propagates for the API to answer 503.
+        """
         job = await to_thread.run_sync(self._create_job, source)
 
         try:

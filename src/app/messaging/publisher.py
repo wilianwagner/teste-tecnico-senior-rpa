@@ -18,6 +18,13 @@ class SupportsPublish(Protocol):
 
 
 class CrawlJobPublisher:
+    """Async publisher used by the API.
+
+    Uses a robust connection (reconnects on broker restarts) with publisher
+    confirms, and marks messages persistent so scheduled jobs survive a broker
+    restart. Publish failures surface as PublishError for the caller to handle.
+    """
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._connection: AbstractRobustConnection | None = None

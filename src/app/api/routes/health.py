@@ -8,7 +8,13 @@ from app.schemas.api import HealthOut
 router = APIRouter(tags=["health"])
 
 
-@router.get("/health", response_model=HealthOut, summary="Service health")
+@router.get(
+    "/health",
+    response_model=HealthOut,
+    summary="Service health",
+    description="Checks database and broker connectivity.",
+    responses={503: {"description": "One or more dependencies are unreachable."}},
+)
 async def health(request: Request, response: Response) -> HealthOut:
     database_ok = await to_thread.run_sync(_check_database, request)
     broker_ok = await _check_broker(request)

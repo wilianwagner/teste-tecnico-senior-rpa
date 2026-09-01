@@ -13,7 +13,14 @@ router = APIRouter(prefix="/crawl", tags=["crawl"])
     response_model=JobEnqueuedOut,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Schedule a crawl job",
-    description="Creates a job, publishes it to the queue and returns immediately.",
+    description=(
+        "Creates a job in `pending` state, publishes a message to RabbitMQ and returns "
+        "immediately with the job id. Use `source=all` to collect both sources in a "
+        "single job. Track progress via `GET /jobs/{job_id}`."
+    ),
+    responses={
+        503: {"description": "Job could not be published to the broker (marked as failed)."},
+    },
 )
 async def schedule_crawl(
     source: JobSource, service: JobService = Depends(get_job_service)

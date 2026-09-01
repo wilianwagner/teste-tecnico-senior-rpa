@@ -48,7 +48,13 @@ Pré-requisito: Docker + Docker Compose.
 docker compose up --build -d
 ```
 
-Sobe PostgreSQL, RabbitMQ, Selenium (chromium standalone), aplica as migrações (serviço one-shot) e inicia API e worker. A API fica em `http://localhost:8000` (OpenAPI em `/docs`; management do RabbitMQ em `http://localhost:15672`, usuário/senha `rpa`/`rpa`).
+Sobe PostgreSQL, RabbitMQ, Selenium (chromium standalone), aplica as migrações (serviço one-shot) e inicia API e worker.
+
+- **Dashboard web**: `http://localhost:8000` — agenda coletas, acompanha jobs em tempo real e explora os resultados com filtros.
+- **Swagger UI**: `http://localhost:8000/docs` (ReDoc em `/redoc`).
+- **RabbitMQ management**: `http://localhost:15672` (usuário/senha `rpa`/`rpa`).
+
+Guia completo de operação — dashboard, exemplos de API, acesso ao banco e à fila — em **[docs/USAGE.md](docs/USAGE.md)**.
 
 ```bash
 # agendar coletas
@@ -77,6 +83,7 @@ curl "http://localhost:8000/results/oscar?year=2015"
 | GET | `/results/hockey` | Snapshot da última coleta completa (filtros `year`, `team`) |
 | GET | `/results/oscar` | Snapshot da última coleta completa (filtros `year`, `title`) |
 | GET | `/health` | Saúde de banco e broker (503 se degradado) |
+| GET | `/` | Dashboard web |
 
 ## Desenvolvimento
 
@@ -124,6 +131,7 @@ src/app/
 ├── messaging/      # contrato da mensagem, topologia AMQP, publisher
 ├── schemas/        # DTOs de coleta e schemas da API
 ├── services/       # orquestração job + publicação
+├── static/         # dashboard web (HTML/JS puro, servido pela API)
 └── worker/         # consumer, processor (ciclo de vida do job), entrypoint
 alembic/            # migrações
 tests/unit          # rápidos, sem rede e sem Docker

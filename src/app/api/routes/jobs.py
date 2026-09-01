@@ -14,12 +14,17 @@ from app.schemas.api import HockeyTeamStatOut, JobOut, JobResultsOut, OscarFilmO
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.get("", response_model=Page[JobOut], summary="List jobs")
+@router.get(
+    "",
+    response_model=Page[JobOut],
+    summary="List jobs",
+    description="Lists jobs ordered by creation date (newest first).",
+)
 def list_jobs(
-    status: JobStatus | None = None,
-    source: JobSource | None = None,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    status: JobStatus | None = Query(None, description="Filter by job status"),
+    source: JobSource | None = Query(None, description="Filter by crawl source"),
+    limit: int = Query(50, ge=1, le=500, description="Page size"),
+    offset: int = Query(0, ge=0, description="Rows to skip"),
     session: Session = Depends(get_db),
 ) -> Page[JobOut]:
     jobs, total = JobRepository(session).list(
@@ -33,7 +38,12 @@ def list_jobs(
     )
 
 
-@router.get("/{job_id}", response_model=JobOut, summary="Get job status and details")
+@router.get(
+    "/{job_id}",
+    response_model=JobOut,
+    summary="Get job status and details",
+    responses={404: {"description": "Job not found."}},
+)
 def get_job(job_id: uuid.UUID, session: Session = Depends(get_db)) -> JobOut:
     job = _get_job_or_raise(session, job_id)
     return JobOut.model_validate(job)
@@ -44,11 +54,17 @@ def get_job(job_id: uuid.UUID, session: Session = Depends(get_db)) -> JobOut:
     response_model=JobResultsOut,
     response_model_exclude_none=True,
     summary="Get the data collected by a job",
+    description=(
+        "Returns the rows persisted by this specific job. Sections (`hockey`/`oscar`) "
+        "are present according to the job source; a job that has not completed yet "
+        "returns empty sections alongside its current status."
+    ),
+    responses={404: {"description": "Job not found."}},
 )
 def get_job_results(
     job_id: uuid.UUID,
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000, description="Page size applied to each section"),
+    offset: int = Query(0, ge=0, description="Rows to skip in each section"),
     session: Session = Depends(get_db),
 ) -> JobResultsOut:
     job = _get_job_or_raise(session, job_id)

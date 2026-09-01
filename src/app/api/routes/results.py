@@ -12,12 +12,16 @@ router = APIRouter(prefix="/results", tags=["results"])
     "/hockey",
     response_model=HockeySnapshotOut,
     summary="Hockey data from the most recent completed collection",
+    description=(
+        "Snapshot of the latest completed hockey collection (`source=hockey` or `all`). "
+        "When no collection has completed yet, `job_id` is null and `items` is empty."
+    ),
 )
 def get_hockey_results(
-    year: int | None = None,
-    team: str | None = None,
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    year: int | None = Query(None, description="Filter by season year"),
+    team: str | None = Query(None, description="Case-insensitive substring of the team name"),
+    limit: int = Query(100, ge=1, le=1000, description="Page size"),
+    offset: int = Query(0, ge=0, description="Rows to skip"),
     session: Session = Depends(get_db),
 ) -> HockeySnapshotOut:
     job, items, total = ResultRepository(session).latest_hockey(
@@ -37,12 +41,16 @@ def get_hockey_results(
     "/oscar",
     response_model=OscarSnapshotOut,
     summary="Oscar data from the most recent completed collection",
+    description=(
+        "Snapshot of the latest completed oscar collection (`source=oscar` or `all`). "
+        "When no collection has completed yet, `job_id` is null and `items` is empty."
+    ),
 )
 def get_oscar_results(
-    year: int | None = None,
-    title: str | None = None,
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    year: int | None = Query(None, description="Filter by ceremony year"),
+    title: str | None = Query(None, description="Case-insensitive substring of the film title"),
+    limit: int = Query(100, ge=1, le=1000, description="Page size"),
+    offset: int = Query(0, ge=0, description="Rows to skip"),
     session: Session = Depends(get_db),
 ) -> OscarSnapshotOut:
     job, items, total = ResultRepository(session).latest_oscar(

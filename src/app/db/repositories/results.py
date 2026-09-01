@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import JobSource, JobStatus
@@ -14,15 +14,23 @@ class ResultRepository:
         self.session = session
 
     def replace_hockey(self, job_id: uuid.UUID, rows: Sequence[HockeyTeamData]) -> int:
-        """Replace the job's hockey rows (delete+insert), keeping reruns idempotent."""
+        """Replace the job's hockey rows (delete + bulk insert), keeping reruns idempotent."""
         self.session.execute(delete(HockeyTeamStat).where(HockeyTeamStat.job_id == job_id))
-        self.session.add_all(HockeyTeamStat(job_id=job_id, **row.model_dump()) for row in rows)
+        if rows:
+            self.session.execute(
+                insert(HockeyTeamStat),
+                [{"job_id": job_id, **row.model_dump()} for row in rows],
+            )
         return len(rows)
 
     def replace_oscar(self, job_id: uuid.UUID, rows: Sequence[OscarFilmData]) -> int:
-        """Replace the job's oscar rows (delete+insert), keeping reruns idempotent."""
+        """Replace the job's oscar rows (delete + bulk insert), keeping reruns idempotent."""
         self.session.execute(delete(OscarFilm).where(OscarFilm.job_id == job_id))
-        self.session.add_all(OscarFilm(job_id=job_id, **row.model_dump()) for row in rows)
+        if rows:
+            self.session.execute(
+                insert(OscarFilm),
+                [{"job_id": job_id, **row.model_dump()} for row in rows],
+            )
         return len(rows)
 
     def list_hockey_for_job(

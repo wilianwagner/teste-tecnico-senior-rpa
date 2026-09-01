@@ -21,6 +21,10 @@ def _str_enum(enum_cls: type[StrEnum]) -> SAEnum:
 
 class Job(Base):
     __tablename__ = "jobs"
+    __table_args__ = (
+        Index("ix_jobs_created_at", "created_at"),
+        Index("ix_jobs_status_source_finished_at", "status", "source", "finished_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     source: Mapped[JobSource] = mapped_column(_str_enum(JobSource))

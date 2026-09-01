@@ -39,6 +39,7 @@ Sistema de coleta de dados web com processamento assíncrono: crawlers orquestra
 - **`POST /crawl/all`**: cria **um** job que executa as duas coletas em sequência. Falha parcial → job `failed` indicando qual fonte falhou, mas os dados da fonte bem-sucedida permanecem gravados e consultáveis.
 - **Resultados por job + snapshot**: cada linha coletada referencia o `job_id` (auditável, atende `GET /jobs/{id}/results`). `GET /results/{source}` responde o snapshot da **última coleta completa** da fonte, com filtros e paginação.
 - **Graceful shutdown**: SIGTERM/SIGINT finaliza o job corrente, faz ack e fecha conexões; reconexão ao broker com backoff.
+- **Desempenho**: as páginas do Hockey são buscadas concorrentemente (pool limitado por `HOCKEY_CONCURRENCY`, preservando a ordem); resultados entram no banco em lote (`executemany`); as consultas de listagem e de snapshot têm índices dedicados; a imagem Docker pré-compila bytecode. O CI exige cobertura mínima de 85% nos testes unitários.
 
 ## Como rodar
 

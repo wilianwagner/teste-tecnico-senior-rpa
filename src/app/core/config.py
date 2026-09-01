@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     hockey_base_url: str = "https://www.scrapethissite.com/pages/forms/"
     hockey_per_page: int = 100
+    hockey_concurrency: int = 4
     oscar_url: str = "https://www.scrapethissite.com/pages/ajax-javascript/"
 
     http_timeout_seconds: float = 15.0

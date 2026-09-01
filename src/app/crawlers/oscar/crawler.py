@@ -80,8 +80,8 @@ class OscarCrawler:
 
         return parse_films(driver.page_source, int(year_id))
 
-    @staticmethod
-    def _table_ready(driver: WebDriver, previous_first_row: WebElement | None) -> bool:
+    @classmethod
+    def _table_ready(cls, driver: WebDriver, previous_first_row: WebElement | None) -> bool:
         """Explicit wait condition for a year's table to be fully rendered.
 
         Three signals are required because the page replaces the table body
@@ -89,17 +89,19 @@ class OscarCrawler:
         row still attached means the old table is on screen), the loading
         spinner must be hidden, and at least one film row must exist.
         """
-        if previous_first_row is not None:
-            try:
-                previous_first_row.is_enabled()
-            except StaleElementReferenceException:
-                pass
-            else:
-                return False
-
+        if previous_first_row is not None and not cls._is_stale(previous_first_row):
+            return False
         if driver.find_element(By.ID, "loading").is_displayed():
             return False
         return len(driver.find_elements(By.CSS_SELECTOR, "tr.film")) > 0
+
+    @staticmethod
+    def _is_stale(element: WebElement) -> bool:
+        try:
+            element.is_enabled()
+        except StaleElementReferenceException:
+            return True
+        return False
 
     def _build_driver(self) -> WebDriver:
         options = ChromeOptions()

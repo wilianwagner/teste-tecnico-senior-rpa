@@ -1,200 +1,131 @@
-# Teste Técnico - Desenvolvedor Senior RPA
+# RPA Crawler
 
-## Contexto
+Sistema de coleta de dados web com processamento assíncrono: crawlers orquestrados por fila (RabbitMQ), persistência em PostgreSQL e API REST (FastAPI). Implementação do [teste técnico](docs/DESAFIO.md) para Desenvolvedor Senior RPA.
 
-Você foi contratado para desenvolver um sistema de coleta de dados que extrai informações de múltiplas fontes web, gerencia jobs através de filas de mensagens, e disponibiliza os dados via API REST.
-
-## Objetivo
-
-Construir uma aplicação que:
-
-1. Colete dados de **duas fontes distintas** com diferentes estratégias de scraping
-2. Implemente um **sistema de filas com RabbitMQ** para gerenciamento de jobs
-3. Persista dados em **PostgreSQL**
-4. Exponha uma **API REST**
-5. Tenha **testes automatizados** (unitários e integração)
-6. Seja **containerizada** e executável via `docker-compose up`
-7. Tenha **CI/CD** com GitHub Actions
-
----
-
-## Arquitetura Esperada
+## Arquitetura
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   FastAPI   │────▶│  RabbitMQ   │────▶│   Workers   │
-│    (API)    │     │   (Queue)   │     │  (Crawlers) │
-└─────────────┘     └─────────────┘     └─────────────┘
-       │                                       │
-       │            ┌─────────────┐            │
-       └───────────▶│  PostgreSQL │◀───────────┘
-                    │    (Data)   │
-                    └─────────────┘
+┌─────────────┐  publica   ┌─────────────┐  consome   ┌─────────────┐
+│   FastAPI   │───────────▶│  RabbitMQ   │───────────▶│   Worker    │
+│    (api)    │            │   (queue)   │            │  (crawlers) │
+└──────┬──────┘            └──────┬──────┘            └──────┬──────┘
+       │                          │ DLX                      │
+       │                   ┌──────▼──────┐            ┌──────▼──────┐
+       │                   │     DLQ     │            │  Selenium   │
+       │                   └─────────────┘            │ (chromium)  │
+       │                                              └─────────────┘
+       │                   ┌─────────────┐                   │
+       └──────────────────▶│ PostgreSQL  │◀──────────────────┘
+                           └─────────────┘
 ```
 
----
+**Fluxo:** `POST /crawl/{source}` cria um registro de job (`pending`) no PostgreSQL, publica a mensagem `{job_id, source}` no RabbitMQ e responde `202` imediatamente. O worker consome a mensagem, marca o job como `running`, executa o(s) crawler(s), persiste os resultados e finaliza o job (`completed`/`failed`). O status e os dados ficam disponíveis via API.
 
-## Sites Alvo
+### Estratégias de scraping (duas fontes, duas técnicas)
 
-### 1. Hockey Teams
+| Fonte | Técnica | Por quê |
+|---|---|---|
+| **Hockey Teams** (HTML paginado) | `httpx` + BeautifulSoup | Conteúdo estático: HTTP puro é mais rápido, estável e barato. O crawler descobre o total de páginas na paginação e percorre todas com retry/backoff. |
+| **Oscar Films** (AJAX/JavaScript) | **Selenium** (Chromium headless via Remote WebDriver) | Conteúdo renderizado por JS: o crawler clica em cada ano, aguarda com condições explícitas (spinner oculto + staleness da tabela anterior + linhas presentes) e extrai o DOM renderizado. |
 
-**URL:** https://www.scrapethissite.com/pages/forms/
+> **Trade-off registrado:** o endpoint AJAX do Oscar (`?ajax=true&year=YYYY`) retorna JSON puro e poderia ser consumido diretamente com `httpx`, o que seria mais eficiente e menos frágil. O Selenium foi usado deliberadamente porque o desafio pede duas estratégias distintas e automação de página dinâmica — exatamente o cenário em que browser automation se justifica.
 
-**Características:** Página HTML com paginação tradicional
+### Decisões de projeto
 
-**Dados a coletar:**
-- Team Name
-- Year
-- Wins, Losses, OT Losses
-- Win %, Goals For (GF), Goals Against (GA), Goal Difference
+- **Parsers puros**: recebem HTML e devolvem DTOs Pydantic, sem I/O — testáveis offline com fixtures reais dos sites. Linha malformada falha alto (`CrawlerError`) em vez de persistir dado incompleto.
+- **API fina / worker separado**: a API nunca faz crawling; o worker (síncrono — Selenium e parsing são bloqueantes) roda na mesma imagem Docker com outro comando. Publisher assíncrono (`aio-pika`) na API; consumer síncrono (`pika`) no worker.
+- **Resiliência na fila**: fila e mensagens duráveis, publisher confirms, `prefetch=1`, **ack manual só após commit**. Falha de crawl → retry limitado por contador de tentativas **persistido no banco** (sobrevive a crash do worker); esgotado o limite, a mensagem vai para a **DLQ** via dead-letter exchange e o job fica `failed` com o erro registrado.
+- **Idempotência**: mensagem redelivered de job já `completed` é reconhecida e ignorada; reprocessamento substitui os resultados daquele job (delete+insert) — sem duplicatas.
+- **`POST /crawl/all`**: cria **um** job que executa as duas coletas em sequência. Falha parcial → job `failed` indicando qual fonte falhou, mas os dados da fonte bem-sucedida permanecem gravados e consultáveis.
+- **Resultados por job + snapshot**: cada linha coletada referencia o `job_id` (auditável, atende `GET /jobs/{id}/results`). `GET /results/{source}` responde o snapshot da **última coleta completa** da fonte, com filtros e paginação.
+- **Graceful shutdown**: SIGTERM/SIGINT finaliza o job corrente, faz ack e fecha conexões; reconexão ao broker com backoff.
 
----
+## Como rodar
 
-### 2. Oscar Winning Films
+Pré-requisito: Docker + Docker Compose.
 
-**URL:** https://www.scrapethissite.com/pages/ajax-javascript/
-
-**Características:** Dados carregados via JavaScript/AJAX
-
-**Dados a coletar:**
-- Year, Title, Nominations, Awards, Best Picture
-
----
-
-## Requisitos Técnicos
-
-### Stack Obrigatória
-
-| Tecnologia | Uso |
-|------------|-----|
-| **FastAPI** | Framework web |
-| **Pydantic** | Validação e serialização |
-| **SQLAlchemy** | ORM para persistência |
-| **PostgreSQL** | Banco de dados |
-| **RabbitMQ** | Sistema de filas |
-| **Selenium** | Disponível para páginas dinâmicas |
-| **Docker + Docker Compose** | Containerização |
-| **GitHub Actions** | CI/CD |
-
----
-
-## Endpoints da API (Assíncronos)
-
-```
-# Agendar coletas
-POST /crawl/hockey         → Agenda coleta do Hockey (retorna job_id)
-POST /crawl/oscar          → Agenda coleta do Oscar (retorna job_id)
-POST /crawl/all            → Agenda ambas as coletas (retorna job_id)
-
-# Gerenciar jobs
-GET  /jobs                 → Lista todos os jobs
-GET  /jobs/{job_id}        → Status e detalhes de um job
-
-# Consultar resultados
-GET  /jobs/{job_id}/results → Resultados de um job específico
-GET  /results/hockey        → Todos os dados coletados de Hockey
-GET  /results/oscar         → Todos os dados coletados de Oscar
+```bash
+docker compose up --build -d
 ```
 
-**Fluxo assíncrono:**
-1. `POST /crawl/*` publica mensagem no RabbitMQ e retorna `job_id` imediatamente
-2. Worker consome a mensagem e executa o crawling
-3. `GET /jobs/{job_id}` para verificar status (pending, running, completed, failed)
-4. `GET /jobs/{job_id}/results` para obter os dados coletados por aquele job
+Sobe PostgreSQL, RabbitMQ, Selenium (chromium standalone), aplica as migrações (serviço one-shot) e inicia API e worker. A API fica em `http://localhost:8000` (OpenAPI em `/docs`; management do RabbitMQ em `http://localhost:15672`, usuário/senha `rpa`/`rpa`).
 
----
+```bash
+# agendar coletas
+curl -X POST http://localhost:8000/crawl/hockey
+curl -X POST http://localhost:8000/crawl/oscar
+curl -X POST http://localhost:8000/crawl/all
+
+# acompanhar
+curl http://localhost:8000/jobs
+curl http://localhost:8000/jobs/<job_id>
+curl http://localhost:8000/jobs/<job_id>/results
+
+# dados consolidados (última coleta completa)
+curl "http://localhost:8000/results/hockey?year=1990&team=bruins"
+curl "http://localhost:8000/results/oscar?year=2015"
+```
+
+### Endpoints
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/crawl/hockey` \| `/crawl/oscar` \| `/crawl/all` | Agenda a coleta e retorna `job_id` (202) |
+| GET | `/jobs` | Lista jobs (filtros `status`, `source`; paginação `limit`/`offset`) |
+| GET | `/jobs/{job_id}` | Status e detalhes do job (tentativas, erro, timestamps) |
+| GET | `/jobs/{job_id}/results` | Dados coletados por aquele job |
+| GET | `/results/hockey` | Snapshot da última coleta completa (filtros `year`, `team`) |
+| GET | `/results/oscar` | Snapshot da última coleta completa (filtros `year`, `title`) |
+| GET | `/health` | Saúde de banco e broker (503 se degradado) |
+
+## Desenvolvimento
+
+Com [Nix + direnv](docs/DESAFIO.md#ambiente-de-desenvolvimento) (`direnv allow`) ou apenas [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync                 # instala Python 3.13 + dependências
+make lint               # ruff check + format check
+make typecheck          # mypy (strict)
+make test               # testes unitários (rápidos, sem Docker)
+make test-integration   # testes de integração (Testcontainers, requer Docker)
+make up / make down     # docker compose
+```
+
+Sem Docker disponível, os testes de integração são pulados com aviso — os unitários rodam sempre.
 
 ## Testes
 
-| Tipo | Descrição |
-|------|-----------|
-| **Unitários** | Testar lógica de negócio, parsers, validações |
-| **Integração** | Testar API, filas e banco usando Testcontainers |
+- **Unitários** (`tests/unit`): parsers com fixtures HTML reais salvas dos sites (células vazias, saldo negativo, flag de best picture, títulos com espaços), ciclo de vida do job no processor (sucesso, retry, falha final, idempotência, falha parcial do `all`), mapeamento outcome→ack/nack do consumer, serviço de enfileiramento e todos os endpoints da API (TestClient + publisher fake).
+- **Integração** (`tests/integration`, Testcontainers): migrações e repositórios contra PostgreSQL real; persistência, requeue e roteamento para DLQ contra RabbitMQ real; fluxo completo API → fila → worker → banco → API com crawler stub (o desafio dispensa crawling real nos testes), cobrindo conclusão, retries limitados até DLQ e a fonte combinada.
 
-**Não é necessário** testar crawling real contra os sites.
+## CI/CD
 
----
+`.github/workflows/ci.yml`: **lint** (ruff + mypy) → **testes unitários** (com cobertura) → **testes de integração** (Testcontainers) → **build** da imagem (Buildx + cache) → **push para GCR** (somente push na `main`).
 
-## CI/CD com GitHub Actions
+Para habilitar o push, configure os secrets do repositório:
 
-O pipeline deve executar:
+| Secret | Conteúdo |
+|---|---|
+| `GCP_PROJECT_ID` | ID do projeto no Google Cloud |
+| `GCP_SA_KEY` | JSON da service account com papel `roles/storage.admin` (GCR usa GCS) |
 
-1. **Lint** - Verificar código (ruff, black, etc.)
-2. **Testes unitários** - pytest
-3. **Testes de integração** - pytest com Testcontainers
-4. **Build** - Construir imagem Docker
-5. **Push** - Enviar imagem para Google Container Registry (GCR)
+Sem os secrets o passo de push é pulado com aviso — o pipeline continua verde em forks. A imagem é tagueada com o SHA do commit e `latest`.
 
----
+> **Nota:** o Container Registry (gcr.io) está deprecado pelo Google em favor do **Artifact Registry**. O pipeline usa `gcr.io` conforme o enunciado; a migração exigiria apenas trocar o registry para `<region>-docker.pkg.dev` e o papel da service account para `roles/artifactregistry.writer`.
 
-## Critérios de Avaliação
-
-| Critério | Peso |
-|----------|------|
-| **Arquitetura** | Alto - Design, separação de responsabilidades, uso do RabbitMQ |
-| **Qualidade de código** | Alto - SOLID, tipagem, boas práticas |
-| **Funcionamento** | Alto - A solução deve funcionar corretamente |
-| **Testes** | Alto - Unitários e integração com Testcontainers |
-| **CI/CD** | Alto - Pipeline funcional com push para GCR |
-| **Tratamento de erros** | Médio - Robustez e resiliência |
-| **Documentação** | Baixo |
-
----
-
-## Ambiente de Desenvolvimento
-
-### Nix + direnv (Recomendado - Linux)
-
-#### 1. Instalar Nix
-
-```bash
-sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
-```
-
-#### 2. Habilitar Flakes
-
-Adicione ao `~/.config/nix/nix.conf`:
+## Estrutura
 
 ```
-experimental-features = nix-command flakes
+src/app/
+├── api/            # FastAPI: rotas, dependências, error handlers
+├── core/           # settings (pydantic-settings), logging estruturado, enums, exceções
+├── crawlers/       # hockey (httpx+bs4) e oscar (selenium), parsers puros, registry
+├── db/             # models SQLAlchemy 2.0, sessão, repositórios
+├── messaging/      # contrato da mensagem, topologia AMQP, publisher
+├── schemas/        # DTOs de coleta e schemas da API
+├── services/       # orquestração job + publicação
+└── worker/         # consumer, processor (ciclo de vida do job), entrypoint
+alembic/            # migrações
+tests/unit          # rápidos, sem rede e sem Docker
+tests/integration   # Testcontainers (PostgreSQL + RabbitMQ)
 ```
-
-#### 3. Instalar direnv
-
-```bash
-# Debian/Ubuntu
-sudo apt install direnv
-
-# Fedora
-sudo dnf install direnv
-
-# Arch
-sudo pacman -S direnv
-```
-
-Adicione ao seu shell (`~/.bashrc` ou `~/.zshrc`):
-
-```bash
-eval "$(direnv hook bash)"  # ou zsh
-```
-
-#### 4. Rodar
-
-O `.envrc` e `flake.nix` já vêm prontos no repositório. Basta permitir o direnv e o ambiente será carregado automaticamente:
-
-```bash
-direnv allow
-```
-
-Commite o `flake.lock` no seu repositório.
-
----
-
-## Regras
-
-1. **Entrega:** Fork deste repositório
-2. **Dúvidas:** ti@bpcreditos.com.br | gabrielpelizzaro@gmail.com
-
----
-
-**Queremos ver como você arquiteta soluções, não apenas como escreve código.**
